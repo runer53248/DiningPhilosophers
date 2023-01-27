@@ -49,8 +49,7 @@ struct Philosopher {
                     dining();
                     release_forks(std::move(lock_pair));
                     return true;
-                })
-                .value_or(false))
+                }))
             {
                 hungry();
                 thinking(); // thinking when can't dining
@@ -65,7 +64,9 @@ struct Philosopher {
         return eating_times_count;
     }
 
-    static void setFence(int limit);
+    static void setFence(int limit) {
+        counter = limit;
+    }
 
 private:
     void fence() const;
@@ -77,11 +78,17 @@ private:
     void hungry() const;
     
     template<Hand H>
+    auto mainHandFork() const -> const Fork&;
+
+    template<Hand H>
+    auto otherHandfork() const -> const Fork&;
+    
+    template<Hand H>
     auto take() const -> Fork::lock_opt;
 
     template<Hand H>
     auto holding_take(Fork::lock_type&& other_lock) const -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>>;
-
+    
     template <Action action, typename... Args>
     void add_event(Args&&... args) const;
 
@@ -101,10 +108,6 @@ private:
 };
 
 std::atomic_int Philosopher::counter = 0;
-
-void Philosopher::setFence(int limit) {
-    counter = limit;
-}
 
 void Philosopher::fence() const {
     if (counter <= 0) {
@@ -142,94 +145,103 @@ void Philosopher::hungry() const {
 }
 
 auto Philosopher::take_forks() const -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>> {
-    auto take_in_hand = [&]() {
+    const auto take_in_main_hand = [&]() {
         if (main_hand == Hand::Left) {
             return take<Hand::Left>();
         } 
         return take<Hand::Right>();
     };
 
-    auto take_in_next_hand = [&](auto&& lock) {
+    const auto take_in_next_hand = [&](auto&& lock) {
         if (main_hand == Hand::Left) {
-            return holding_take<Hand::Right>(std::move(lock));
+            return holding_take<Hand::Left>(std::move(lock));
         } 
-        return holding_take<Hand::Left>(std::move(lock));
+        return holding_take<Hand::Right>(std::move(lock));
     };
     
-    return take_in_hand()
+    return take_in_main_hand()
         .and_then([&](auto&& lock) {
             return take_in_next_hand(std::move(lock));
         });
 }
 
 template<Hand H>
+auto Philosopher::mainHandFork() const -> const Fork& {
+    if (H == Hand::Left) { return left_fork; }
+    return right_fork;
+}
+
+template<Hand H>
+auto Philosopher::otherHandfork() const -> const Fork& {
+    if (H == Hand::Left) { return right_fork; }
+    return left_fork;
+}
+
+template<Hand H>
 auto Philosopher::take() const -> Fork::lock_opt {
-    auto& main_fork = [&]() -> const Fork& {
-        if constexpr (H == Hand::Left) { 
-            return left_fork;
-        }
-        return right_fork;
+    constexpr auto action_ignored = [](){
+        if constexpr (H == Hand::Left) { return Action::Not_taking_left; } 
+        return Action::Not_taking_right;
     } ();
 
-    auto action_ignored = [](){
-        if constexpr (H == Hand::Left) {
-            return Action::Not_taking_left;
-        } 
-        return Action::Not_taking_right;
-    };
-
-    auto action_accept = [](){
-        if constexpr (H == Hand::Left) {
-            return Action::Taking_left;
-        } 
+    constexpr auto action_accept = [](){
+        if constexpr (H == Hand::Left) { return Action::Taking_left; } 
         return Action::Taking_right;
-    };
+    } ();
 
-    auto opt_lock = main_fork.try_take();
-
-    if (not opt_lock) {
-        add_event<action_ignored()>("can't take ", main_fork);
-        return {};
+    auto& main_fork = mainHandFork<H>();
+    
+    if (auto opt_lock = main_fork.try_take()
+        .and_then([&](auto&& fork_lock) -> Fork::lock_opt {
+             add_event<action_accept>("take ", main_fork);
+             return fork_lock;
+        })) {
+        return opt_lock;
     }
 
-    add_event<action_accept()>("take ", main_fork);
-    return opt_lock;
+    add_event<action_ignored>("can't take ", main_fork);
+    return {};
 }
 
 template<Hand H>
 auto Philosopher::holding_take(Fork::lock_type&& other_lock) const -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>> {
-    const auto& fork = [&]() -> const Fork& {
-        if constexpr (H == Hand::Left) { return left_fork; }
-        else { return right_fork; }
+    constexpr auto action_ignored = [](){
+        if constexpr (H == Hand::Left) {
+            return Action::Not_taking_right_have_left;
+        } 
+        return Action::Not_taking_left_have_right;
     } ();
 
-    const auto& other_fork = [&]() -> const Fork& {
-        if constexpr (H == Hand::Left) { return right_fork; }
-        else { return left_fork; }
+    constexpr auto action_accept = [](){
+        if constexpr (H == Hand::Left) {
+            return Action::Taking_right_have_left;
+        } 
+        return Action::Taking_left_have_right;
     } ();
 
-    auto opt_lock_pair = fork.try_take().and_then([&](auto&& lock) -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>> {
-        if constexpr (H == Hand::Right) {
-            add_event<Action::Taking_right_have_left>("take ", fork);
-        } else {
-            add_event<Action::Taking_left_have_right>("take ", fork);
-        }
-        return std::make_pair(std::move(other_lock), std::move(lock));
-    });
+    constexpr auto action_put_back = [](){
+        if constexpr (H == Hand::Left) {
+            return Action::Put_left;
+        } 
+        return Action::Put_right;
+    } ();
 
-    if (not opt_lock_pair) {
-        if constexpr (H == Hand::Right) {
-            add_event<Action::Not_taking_right_have_left>("can't take ", fork);
-            other_lock.unlock();
-            add_event<Action::Put_left>("put ", other_fork);
-        } else {
-            add_event<Action::Not_taking_left_have_right>("can't take ", fork);
-            other_lock.unlock();
-            add_event<Action::Put_right>("put ", other_fork);
-        }
+    auto& secondary_fork = otherHandfork<H>();
+
+    if (auto opt_lock_pair = secondary_fork.try_take()
+        .and_then([&](auto&& lock) -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>> {
+            add_event<action_accept>("take ", secondary_fork);
+            return std::make_pair(std::move(other_lock), std::move(lock));
+        })) {
+        return opt_lock_pair;
     }
 
-    return opt_lock_pair;
+    auto& main_fork = mainHandFork<H>();
+    
+    add_event<action_ignored>("can't take ", secondary_fork);
+    other_lock.unlock();
+    add_event<action_put_back>("put ", main_fork);
+    return {};
 }
 
 void Philosopher::release_forks(std::pair<Fork::lock_type, Fork::lock_type>&& forks_pair) const {
