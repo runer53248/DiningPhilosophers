@@ -51,9 +51,8 @@ int main() {
     };
 
     auto add_philosopher_thread = [&](int index, auto forks_pair) {
-        threads[index] = (index == philosophers_num - 1)
-            ? std::thread(Philosopher{index, Hand::Right, events_lines[index], forks_pair.first, forks_pair.second})
-            : std::thread(Philosopher{index, Hand::Left, events_lines[index], forks_pair.first, forks_pair.second});
+        Hand hand = (index == philosophers_num - 1) ? Hand::Right : Hand::Left;
+        threads[index] = std::thread(Philosopher{index, hand, events_lines[index], forks_pair.first, forks_pair.second});
     };
 
     for (int times = 0; times < run_times; ++times) {
