@@ -142,42 +142,57 @@ void Philosopher::hungry() const {
 }
 
 auto Philosopher::take_forks() const -> std::optional<std::pair<Fork::lock_type, Fork::lock_type>> {
-    if (main_hand == Hand::Left) {
-        return take<Hand::Left>()
-            .and_then([&](auto&& left_lock){
-                return holding_take<Hand::Right>(std::move(left_lock));
-            });
-    }
-    return take<Hand::Right>()
-        .and_then([&](auto&& right_lock){
-            return holding_take<Hand::Left>(std::move(right_lock));
+    auto take_in_hand = [&]() {
+        if (main_hand == Hand::Left) {
+            return take<Hand::Left>();
+        } 
+        return take<Hand::Right>();
+    };
+
+    auto take_in_next_hand = [&](auto&& lock) {
+        if (main_hand == Hand::Left) {
+            return holding_take<Hand::Right>(std::move(lock));
+        } 
+        return holding_take<Hand::Left>(std::move(lock));
+    };
+    
+    return take_in_hand()
+        .and_then([&](auto&& lock) {
+            return take_in_next_hand(std::move(lock));
         });
 }
 
 template<Hand H>
 auto Philosopher::take() const -> Fork::lock_opt {
-    const auto& fork = [&]() -> const Fork& {
-        if constexpr (H == Hand::Left) { return left_fork; }
-        else { return right_fork; }
+    auto& main_fork = [&]() -> const Fork& {
+        if constexpr (H == Hand::Left) { 
+            return left_fork;
+        }
+        return right_fork;
     } ();
 
-    auto opt_lock = fork.try_take().or_else([&]() -> Fork::lock_opt {
+    auto action_ignored = [](){
         if constexpr (H == Hand::Left) {
-            add_event<Action::Not_taking_left>("can't take ", fork);
-        } else {
-            add_event<Action::Not_taking_right>("can't take ", fork);
-        }
-        return {};
-    });
+            return Action::Not_taking_left;
+        } 
+        return Action::Not_taking_right;
+    };
 
-    if (opt_lock.has_value()) {
+    auto action_accept = [](){
         if constexpr (H == Hand::Left) {
-            add_event<Action::Taking_left>("take ", fork);
-        } else {
-            add_event<Action::Taking_right>("take ", fork);
-        }
+            return Action::Taking_left;
+        } 
+        return Action::Taking_right;
+    };
+
+    auto opt_lock = main_fork.try_take();
+
+    if (not opt_lock) {
+        add_event<action_ignored()>("can't take ", main_fork);
+        return {};
     }
 
+    add_event<action_accept()>("take ", main_fork);
     return opt_lock;
 }
 
