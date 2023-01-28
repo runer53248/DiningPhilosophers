@@ -79,13 +79,13 @@ void print_events(const auto& all_events) {
     std::array<std::tuple<std::string, Color, Color>, philosophers_num> draw;
     draw.fill(std::tuple{action_draws.at(Action::None), Color::Reset, Color::Reset});
 
-    auto text_of = [&](auto philosopher_id) -> std::string& {
+    auto text_of = [&](size_t philosopher_id) -> std::string& {
         return std::get<0>(draw.at(philosopher_id));
     };
-    auto event_color_of = [&](auto philosopher_id) -> Color& {
+    auto event_color_of = [&](size_t philosopher_id) -> Color& {
         return std::get<1>(draw.at(philosopher_id));
     };
-    auto philosopher_color_of = [&](auto philosopher_id) -> Color& {
+    auto philosopher_color_of = [&](size_t philosopher_id) -> Color& {
         return std::get<2>(draw.at(philosopher_id));
     };
 
@@ -108,8 +108,8 @@ void print_events(const auto& all_events) {
         draw_free_forks.fill("|");
 
         auto set_forks_draw = [&]{
-            for (int ph_index = 0; ph_index < philosophers_num; ++ph_index) {
-                auto ph_before_draw  = (ph_index - 1 < 0) ? text_of(philosophers_num - 1) : text_of(ph_index-1);
+            for (size_t ph_index = 0; ph_index < philosophers_num; ++ph_index) {
+                auto ph_before_draw  = (ph_index == 0) ? text_of(philosophers_num - 1) : text_of(ph_index-1);
                 auto ph_current_draw = text_of(ph_index);
 
                 if (ph_before_draw[after_char_index] == ' ' && ph_current_draw[before_char_index] == ' ') {
@@ -121,7 +121,7 @@ void print_events(const auto& all_events) {
         };
         set_forks_draw();
 
-        for(int ph_index = 0; ph_index < philosophers_num; ++ph_index) {
+        for(size_t ph_index = 0; ph_index < philosophers_num; ++ph_index) {
             if (not print_color_by_philosopher) {
                 std::cout << draw_free_forks[ph_index] << colors.at(event_color_of(ph_index)) << text_of(ph_index) << colors.at(Color::Reset);
                 continue;

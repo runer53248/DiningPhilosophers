@@ -30,47 +30,30 @@ int main() {
     std::array<std::vector<Event>, philosophers_num> events_lines;
     std::array<std::thread, philosophers_num> threads;
 
-    // for (auto& line : events_lines) { // reserve vector for Events
-    //     line.reserve(Philosopher::getMaxEatingTimes() * static_cast<size_t>(Action::Finish) * 3);
-    // }
-
-    static auto it = forks.begin();
-
-    auto reset_starting_fork = [&]() {
-        it = forks.begin();
-    };
-
-    auto get_forks = [&]() {
-        auto first_fork = std::ref(*it);
-        std::advance(it, 1);
-        if (it == forks.end()) {
-            it = forks.begin();
-        }
-        auto second_fork = std::ref(*it);
-        return std::pair{first_fork, second_fork};
-    };
-
-    auto add_philosopher_thread = [&](int index, auto forks_pair) {
-        Hand hand = (index == philosophers_num - 1) ? Hand::Right : Hand::Left;
-        threads[index] = std::thread(Philosopher{index, hand, events_lines[index], forks_pair.first, forks_pair.second});
-    };
-
     for (int times = 0; times < run_times; ++times) {
         for(auto& events : events_lines) { // clear events between runs so only last one run will be printed
             events.clear();
         }
 
         Philosopher::setFence(philosophers_num);
-        reset_starting_fork();
-        for (int philosopher_id = 0; philosopher_id < philosophers_num; ++philosopher_id) {
-            auto forks_pair = get_forks();
-            add_philosopher_thread(philosopher_id, forks_pair);
+        static auto it = forks.begin();
+        it = forks.begin();
+
+        for (size_t philosopher_id = 0; philosopher_id < philosophers_num; ++philosopher_id) {
+            const auto first_fork = std::ref(*it);
+            std::advance(it, 1);
+            if (it == forks.end()) {
+                it = forks.begin();
+            }
+            const auto second_fork = std::ref(*it);
+
+            Hand hand = (philosopher_id == philosophers_num - 1) ? Hand::Right : Hand::Left;
+            threads[philosopher_id] = std::thread(Philosopher{philosopher_id, hand, events_lines[philosopher_id], first_fork, second_fork});
         }
 
         for (auto&& thread : threads) {
             thread.join();
         }
-
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////// thread work end here
@@ -102,9 +85,13 @@ int main() {
     if (print_all || (print_part_range > all_events.size()/2)) {
         print_events<philosophers_num>(all_events);
     } else {
+#ifndef __clang__
         print_events<philosophers_num>(all_events | std::views::take(print_part_range));
         std::cout << "\n  .....\n\n";
         print_events<philosophers_num>(all_events | std::views::drop(all_events.size() - print_part_range));
+#else
+        std::cout << "INFO: Printing parts of events feature not supported yet (no support in clang 15).\n";
+#endif
     }
 
     auto count_events = [] (Action A) {

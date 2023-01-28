@@ -5,7 +5,7 @@
 enum class Action;
 
 struct Event {
-    int philosopher_id;
+    size_t philosopher_id;
     Action action;
     std::chrono::nanoseconds time;
     std::stringstream text{};

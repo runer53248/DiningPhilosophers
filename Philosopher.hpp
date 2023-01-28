@@ -36,7 +36,7 @@ template<int philosophers_num>
 void print_events(const auto& all_events);
 
 struct Philosopher {
-    Philosopher(int id, Hand main_hand, std::vector<Event>& events_line, Fork& left_fork, Fork& right_fork) 
+    Philosopher(size_t id, Hand main_hand, std::vector<Event>& events_line, Fork& left_fork, Fork& right_fork) 
         : id{id}, main_hand{main_hand}, left_fork{left_fork}, right_fork{right_fork}, events_line{events_line} {}
 
     void operator()() const {
@@ -92,7 +92,7 @@ private:
     template <Action action, typename... Args>
     void add_event(Args&&... args) const;
 
-    int id;
+    size_t id;
     Hand main_hand;
     Fork& left_fork;
     Fork& right_fork;
